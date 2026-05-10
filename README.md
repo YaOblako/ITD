@@ -1,4 +1,4 @@
-### ИТД На ПК
+### [ИТД](https://итд.com) На ПК
 Што это такое?
 
 <img width="1200" height="800" alt="image" src="https://github.com/user-attachments/assets/b55a5aee-f78e-4fd7-9864-65cc02dbb9a0" />
