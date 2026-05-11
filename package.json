@@ -1,7 +1,7 @@
 {
   "name": "itd",
   "productName": "ИТД",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -21,7 +21,9 @@
       "icon": "icon.png",
       "target": {
         "target": "nsis",
-        "arch": ["x64"]
+        "arch": [
+          "x64"
+        ]
       }
     },
     "nsis": {
@@ -29,10 +31,18 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "YaOblako",
+      "repo": "ITD"
     }
   },
   "devDependencies": {
     "electron": "^35.0.0",
     "electron-builder": "^26.0.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.3"
   }
 }

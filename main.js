@@ -1,6 +1,7 @@
-const { app, BrowserWindow, session, ipcMain, Menu, Tray, nativeImage } = require('electron')
+const { app, BrowserWindow, session, ipcMain, Menu, Tray, nativeImage, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { autoUpdater } = require('electron-updater')
 
 app.setName('ИТД')
 app.setPath('userData', 'C:\\Users\\' + require('os').userInfo().username + '\\AppData\\Roaming\\ИТД')
@@ -82,13 +83,14 @@ function injectTitlebar(win) {
     })();
   `)
 }
-
 function createTray(win) {
   const icon = nativeImage.createFromPath(path.join(__dirname, 'icon.png')).resize({ width: 16, height: 16 })
   tray = new Tray(icon)
   tray.setToolTip('ИТД')
+  
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'ИТД', icon: nativeImage.createFromPath(path.join(__dirname, 'icon.png')).resize({ width: 16, height: 16 }), enabled: false },
+    { label: 'Гитхаб', click: () => shell.openExternal('https://github.com/YaOblako/ITD/tree/main') },
     { type: 'separator' },
     { label: 'Открыть', click: () => { win.show(); win.focus() } },
     { label: 'Перезагрузить', click: () => win.webContents.reload() },
@@ -188,6 +190,32 @@ function createWindow() {
   }))
 
   win.loadURL('https://итд.com')
+
+  autoUpdater.checkForUpdatesAndNotify()
+
+  autoUpdater.on('update-available', () => {
+    const { dialog } = require('electron')
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Обновление',
+      message: 'Доступна новая версия. Обновление...',
+      buttons: ['OK']
+    })
+  })
+
+  autoUpdater.on('update-downloaded', () => {
+    const { dialog } = require('electron')
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Обновление готово',
+      message: 'Обновление установится после перезапуска.',
+      buttons: ['Перезапустить', 'Позже']
+    }).then(result => {
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall()
+      }
+    })
+  })
 }
 
 app.on('browser-window-created', (_, newWin) => {
