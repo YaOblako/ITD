@@ -1,5 +1,6 @@
-const { app, BrowserWindow, session, ipcMain, Menu } = require('electron')
+const { app, BrowserWindow, session, ipcMain, Menu, Tray, nativeImage } = require('electron')
 const path = require('path')
+const fs = require('fs')
 
 app.setName('ИТД')
 app.setPath('userData', 'C:\\Users\\' + require('os').userInfo().username + '\\AppData\\Roaming\\ИТД')
@@ -8,7 +9,11 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 Menu.setApplicationMenu(null)
 
+let tray = null
+
 function injectTitlebar(win) {
+  const iconBase64 = fs.readFileSync(path.join(__dirname, 'icon.png')).toString('base64')
+
   win.webContents.insertCSS(`
     ::-webkit-scrollbar { display: none !important; }
     * { scrollbar-width: none !important; }
@@ -21,7 +26,7 @@ function injectTitlebar(win) {
     #__etb * { -webkit-app-region: no-drag; }
     #__etb_title {
       position: absolute; left: 50%; transform: translateX(-50%);
-      color: #555; font-size: 12px; pointer-events: none;
+      color: #ffffff; font-size: 12px; pointer-events: none;
     }
     #__etb_ctrl { margin-left: auto; display: flex; height: 100%; }
     .etb_cb {
@@ -40,6 +45,10 @@ function injectTitlebar(win) {
 
       const bar = document.createElement('div');
       bar.id = '__etb';
+
+      const logo = document.createElement('img');
+      logo.src = 'data:image/png;base64,${iconBase64}';
+      logo.style.cssText = 'width:20px;height:20px;border-radius:4px;margin-left:8px;margin-right:6px;pointer-events:none;';
 
       const title = document.createElement('div');
       title.id = '__etb_title';
@@ -66,11 +75,57 @@ function injectTitlebar(win) {
         if (e.key === 'F11') document.documentElement.requestFullscreen?.();
       });
 
+      bar.appendChild(logo);
       bar.appendChild(title);
       bar.appendChild(ctrl);
       document.body.appendChild(bar);
     })();
   `)
+}
+
+function createTray(win) {
+  const icon = nativeImage.createFromPath(path.join(__dirname, 'icon.png')).resize({ width: 16, height: 16 })
+  tray = new Tray(icon)
+  tray.setToolTip('ИТД')
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'ИТД', icon: nativeImage.createFromPath(path.join(__dirname, 'icon.png')).resize({ width: 16, height: 16 }), enabled: false },
+    { type: 'separator' },
+    { label: 'Открыть', click: () => { win.show(); win.focus() } },
+    { label: 'Перезагрузить', click: () => win.webContents.reload() },
+    { type: 'separator' },
+    { label: 'Выйти', click: () => { app.isQuiting = true; app.quit() } }
+  ]))
+  tray.on('double-click', () => { win.show(); win.focus() })
+}
+
+function setupIpc() {
+  ipcMain.removeAllListeners('win-minimize')
+  ipcMain.removeAllListeners('win-maximize')
+  ipcMain.removeAllListeners('win-close')
+  ipcMain.removeAllListeners('win-reload')
+  ipcMain.removeAllListeners('win-back')
+  ipcMain.removeAllListeners('win-forward')
+  ipcMain.removeAllListeners('win-devtools')
+
+  ipcMain.on('win-minimize', (e) => BrowserWindow.fromWebContents(e.sender)?.minimize())
+  ipcMain.on('win-maximize', (e) => {
+    const w = BrowserWindow.fromWebContents(e.sender)
+    w?.isMaximized() ? w.unmaximize() : w.maximize()
+  })
+  ipcMain.on('win-close', (e) => {
+    const w = BrowserWindow.fromWebContents(e.sender)
+    if (!w) return
+    const allWindows = BrowserWindow.getAllWindows()
+    if (allWindows.length > 1 && allWindows[0].id !== w.id) {
+      w.close()
+    } else {
+      w.hide()
+    }
+  })
+  ipcMain.on('win-reload', (e) => BrowserWindow.fromWebContents(e.sender)?.webContents.reload())
+  ipcMain.on('win-back', (e) => BrowserWindow.fromWebContents(e.sender)?.webContents.goBack())
+  ipcMain.on('win-forward', (e) => BrowserWindow.fromWebContents(e.sender)?.webContents.goForward())
+  ipcMain.on('win-devtools', (e) => BrowserWindow.fromWebContents(e.sender)?.webContents.toggleDevTools())
 }
 
 function createWindow() {
@@ -79,7 +134,9 @@ function createWindow() {
     height: 800,
     frame: false,
     title: 'ИТД',
-    icon: path.join(__dirname, 'icon.ico'),
+    icon: path.join(__dirname, 'icon.png'),
+    backgroundColor: '#0f0f0f',
+    show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -87,13 +144,17 @@ function createWindow() {
     }
   })
 
-  ipcMain.on('win-minimize', () => win.minimize())
-  ipcMain.on('win-maximize', () => win.isMaximized() ? win.unmaximize() : win.maximize())
-  ipcMain.on('win-close', () => win.close())
-  ipcMain.on('win-reload', () => win.webContents.reload())
-  ipcMain.on('win-back', () => win.webContents.goBack())
-  ipcMain.on('win-forward', () => win.webContents.goForward())
-  ipcMain.on('win-devtools', () => win.webContents.toggleDevTools())
+  win.once('ready-to-show', () => win.show())
+
+  win.on('close', (e) => {
+    if (!app.isQuiting) {
+      e.preventDefault()
+      win.hide()
+    }
+  })
+
+  createTray(win)
+  setupIpc()
 
   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
     details.requestHeaders['User-Agent'] = UA
@@ -105,10 +166,36 @@ function createWindow() {
 
   win.webContents.on('did-finish-load', () => injectTitlebar(win))
   win.webContents.on('did-navigate', () => injectTitlebar(win))
+  win.on('page-title-updated', (e) => e.preventDefault())
+
+  win.webContents.setWindowOpenHandler(() => ({
+    action: 'allow',
+    overrideBrowserWindowOptions: {
+      width: 1200,
+      height: 800,
+      minWidth: 400,
+      minHeight: 300,
+      frame: false,
+      backgroundColor: '#0f0f0f',
+      show: false,
+      icon: path.join(__dirname, 'icon.png'),
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload.js'),
+      }
+    }
+  }))
 
   win.loadURL('https://итд.com')
-  win.on('page-title-updated', (e) => e.preventDefault())
 }
+
+app.on('browser-window-created', (_, newWin) => {
+  newWin.once('ready-to-show', () => newWin.show())
+  newWin.webContents.on('did-finish-load', () => injectTitlebar(newWin))
+  newWin.webContents.on('did-navigate', () => injectTitlebar(newWin))
+  newWin.on('page-title-updated', (e) => e.preventDefault())
+})
 
 app.whenReady().then(createWindow)
 

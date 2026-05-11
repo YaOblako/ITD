@@ -1,7 +1,7 @@
 {
   "name": "itd",
   "productName": "ИТД",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -11,14 +11,14 @@
     "appId": "com.itd.app",
     "productName": "ИТД",
     "forceCodeSigning": false,
-    "compression": "maximum",
     "files": [
       "main.js",
       "preload.js",
-      "icon.ico",
+      "icon.png",
       "package.json"
     ],
     "win": {
+      "icon": "icon.png",
       "target": {
         "target": "nsis",
         "arch": ["x64"]
