@@ -8,4 +8,3 @@
 
 **Пример ошибок ИТД сайта:**
 <img width="293" height="1019" alt="ИТД_EQZ2l3mQUB" src="https://github.com/user-attachments/assets/5b271c11-c233-4126-a3c8-a78f9e804d37" />
-
