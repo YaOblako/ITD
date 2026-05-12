@@ -1,16 +1,34 @@
-const { app, BrowserWindow, session, ipcMain, Menu, Tray, nativeImage, shell } = require('electron')
+const { app, BrowserWindow, session, ipcMain, Notification, Menu, Tray, nativeImage, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { autoUpdater } = require('electron-updater')
 
+const gotTheLock = app.requestSingleInstanceLock()
+
+if (!gotTheLock) {
+  app.quit()
+  return
+}
+
 app.setName('ИТД')
-app.setPath('userData', 'C:\\Users\\' + require('os').userInfo().username + '\\AppData\\Roaming\\ИТД')
+app.setAppUserModelId('com.itd.app')
+app.setPath('userData', path.join(app.getPath('appData'), 'ИТД'))
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
 Menu.setApplicationMenu(null)
 
 let tray = null
+
+app.on('second-instance', () => {
+  const allWindows = BrowserWindow.getAllWindows()
+  if (allWindows.length > 0) {
+    const w = allWindows[0]
+    if (w.isMinimized()) w.restore()
+    w.show()
+    w.focus()
+  }
+})
 
 function injectTitlebar(win) {
   const iconBase64 = fs.readFileSync(path.join(__dirname, 'icon.png')).toString('base64')
@@ -83,21 +101,65 @@ function injectTitlebar(win) {
     })();
   `)
 }
+
 function createTray(win) {
   const icon = nativeImage.createFromPath(path.join(__dirname, 'icon.png')).resize({ width: 16, height: 16 })
   tray = new Tray(icon)
   tray.setToolTip('ИТД')
-  
+
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'ИТД', icon: nativeImage.createFromPath(path.join(__dirname, 'icon.png')).resize({ width: 16, height: 16 }), enabled: false },
     { label: 'Гитхаб', click: () => shell.openExternal('https://github.com/YaOblako/ITD/tree/main') },
     { type: 'separator' },
     { label: 'Открыть', click: () => { win.show(); win.focus() } },
     { label: 'Перезагрузить', click: () => win.webContents.reload() },
+    { label: 'Проверить обновления', click: () => {
+      if (!app.isPackaged) {
+        new Notification({ title: 'ИТД', body: 'Проверка обновлений недоступна в режиме разработки' }).show()
+        return
+      }
+      autoUpdater.checkForUpdates().then(result => {
+        if (!result || !result.updateInfo) return
+        const current = app.getVersion()
+        const latest = result.updateInfo.version
+        if (current === latest) {
+          new Notification({ title: 'ИТД', body: 'У вас уже последняя версия' }).show()
+        }
+      }).catch(() => {
+        new Notification({ title: 'ИТД', body: 'Не удалось проверить обновления. Проверьте доступ к интернету' }).show()
+      })
+    }},
     { type: 'separator' },
     { label: 'Выйти', click: () => { app.isQuiting = true; app.quit() } }
   ]))
+
   tray.on('double-click', () => { win.show(); win.focus() })
+}
+
+function setupUpdater() {
+  if (!app.isPackaged) return
+
+  autoUpdater.checkForUpdatesAndNotify().catch(() => {})
+
+  autoUpdater.on('update-available', (info) => {
+    new Notification({
+      title: 'ИТД',
+      body: `Доступно обновление, версия ${info.version} скачивается`,
+      icon: path.join(__dirname, 'icon.png')
+    }).show()
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    const notif = new Notification({
+      title: 'ИТД',
+      body: `Версия ${info.version} готова, нажмите для установки`,
+      icon: path.join(__dirname, 'icon.png')
+    })
+    notif.on('click', () => {
+      autoUpdater.quitAndInstall()
+    })
+    notif.show()
+  })
 }
 
 function setupIpc() {
@@ -142,6 +204,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
     }
   })
@@ -157,6 +220,13 @@ function createWindow() {
 
   createTray(win)
   setupIpc()
+  setupUpdater()
+
+  session.defaultSession.registerPreloadScript({ type: 'frame', filePath: path.join(__dirname, 'preload.js') })
+
+  ipcMain.on('site-notification', (_, { title, body, icon }) => {
+    new Notification({ title, body, icon: icon || path.join(__dirname, 'icon.png') }).show()
+  })
 
   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
     details.requestHeaders['User-Agent'] = UA
@@ -184,38 +254,13 @@ function createWindow() {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
+        sandbox: false,
         preload: path.join(__dirname, 'preload.js'),
       }
     }
   }))
 
   win.loadURL('https://итд.com')
-
-  autoUpdater.checkForUpdatesAndNotify()
-
-  autoUpdater.on('update-available', () => {
-    const { dialog } = require('electron')
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'Обновление',
-      message: 'Доступна новая версия. Обновление...',
-      buttons: ['OK']
-    })
-  })
-
-  autoUpdater.on('update-downloaded', () => {
-    const { dialog } = require('electron')
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'Обновление готово',
-      message: 'Обновление установится после перезапуска.',
-      buttons: ['Перезапустить', 'Позже']
-    }).then(result => {
-      if (result.response === 0) {
-        autoUpdater.quitAndInstall()
-      }
-    })
-  })
 }
 
 app.on('browser-window-created', (_, newWin) => {
