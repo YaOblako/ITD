@@ -7,11 +7,13 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --publish always"
+    "build": "electron-builder --publish never"
   },
   "build": {
     "appId": "com.itd.app",
     "productName": "ИТД",
+    "artifactName": "ITD-${version}.exe",
+    "generateUpdatesFilesForAllChannels": true,
     "files": [
       "main.js",
       "preload.js",
@@ -30,11 +32,13 @@
       "createStartMenuShortcut": true,
       "shortcutName": "ИТД"
     },
-    "publish": {
-      "provider": "github",
-      "owner": "YaOblako",
-      "repo": "ITD"
-    }
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "YaOblako",
+        "repo": "ITD"
+      }
+    ]
   },
   "devDependencies": {
     "electron": "^35.0.0",
