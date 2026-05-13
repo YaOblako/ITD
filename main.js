@@ -1,10 +1,19 @@
+process.title = 'ИТД'
+
 const { app, BrowserWindow, session, ipcMain, Notification, Menu, Tray, nativeImage, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { exec } = require('child_process')
 const { autoUpdater } = require('electron-updater')
 
-const gotTheLock = app.requestSingleInstanceLock()
+app.commandLine.appendSwitch('js-flags', '--expose-gc')
+app.commandLine.appendSwitch('disable-background-timer-throttling')
+app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService')
+app.commandLine.appendSwitch('disable-breakpad')
+app.commandLine.appendSwitch('disable-extensions')
+app.commandLine.appendSwitch('disable-software-rasterizer')
 
+const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
   app.quit()
   return
@@ -14,11 +23,28 @@ app.setName('ИТД')
 app.setAppUserModelId('com.itd.app')
 app.setPath('userData', path.join(app.getPath('appData'), 'ИТД'))
 
+const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json')
+
+function loadSettings() {
+  try {
+    return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'))
+  } catch {
+    return { autoUpdateEnabled: true }
+  }
+}
+
+function saveSettings(settings) {
+  try {
+    fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true })
+    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2), 'utf8')
+  } catch (e) {}
+}
+
+let settings = loadSettings()
+let tray = null
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 
 Menu.setApplicationMenu(null)
-
-let tray = null
 
 app.on('second-instance', () => {
   const allWindows = BrowserWindow.getAllWindows()
@@ -32,7 +58,6 @@ app.on('second-instance', () => {
 
 function injectTitlebar(win) {
   const iconBase64 = fs.readFileSync(path.join(__dirname, 'icon.png')).toString('base64')
-
   win.webContents.insertCSS(`
     ::-webkit-scrollbar { display: none !important; }
     * { scrollbar-width: none !important; }
@@ -61,21 +86,16 @@ function injectTitlebar(win) {
     (function() {
       if (document.getElementById('__etb')) return;
       document.body.style.paddingTop = '32px';
-
       const bar = document.createElement('div');
       bar.id = '__etb';
-
       const logo = document.createElement('img');
       logo.src = 'data:image/png;base64,${iconBase64}';
       logo.style.cssText = 'width:20px;height:20px;border-radius:4px;margin-left:8px;margin-right:6px;pointer-events:none;';
-
       const title = document.createElement('div');
       title.id = '__etb_title';
       title.textContent = 'ИТД';
-
       const ctrl = document.createElement('div');
       ctrl.id = '__etb_ctrl';
-
       [
         ['<svg viewBox="0 0 10 1" fill="currentColor"><rect width="10" height="1"/></svg>', '', () => window.electronAPI.minimize()],
         ['<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1"><rect x=".5" y=".5" width="9" height="9"/></svg>', '', () => window.electronAPI.maximize()],
@@ -87,13 +107,11 @@ function injectTitlebar(win) {
         b.addEventListener('click', fn);
         ctrl.appendChild(b);
       });
-
       document.addEventListener('keydown', e => {
         if (e.key === 'F5') window.electronAPI.reload();
         if (e.key === 'F12') window.electronAPI.devtools();
         if (e.key === 'F11') document.documentElement.requestFullscreen?.();
       });
-
       bar.appendChild(logo);
       bar.appendChild(title);
       bar.appendChild(ctrl);
@@ -102,119 +120,139 @@ function injectTitlebar(win) {
   `)
 }
 
-function createTray(win) {
-  const icon = nativeImage.createFromPath(path.join(__dirname, 'icon.png')).resize({ width: 16, height: 16 })
-  tray = new Tray(icon)
-  tray.setToolTip('ИТД')
+async function clearMemory(silent = false) {
+  try {
+    if (global.gc) {
+      global.gc()
+      global.gc()
+      global.gc()
+    }
 
-  tray.setContextMenu(Menu.buildFromTemplate([
+    const wins = BrowserWindow.getAllWindows()
+    await Promise.all(wins.map(w =>
+      w.webContents.executeJavaScript('if(window.gc){window.gc();window.gc();}').catch(() => {})
+    ))
+
+    await session.defaultSession.clearCache()
+    await session.defaultSession.clearHostResolverCache()
+    await session.defaultSession.closeAllConnections()
+    
+    await session.defaultSession.clearStorageData({
+      storages: ['appcache', 'shadercache', 'serviceworkers', 'cachestorage']
+    })
+
+    if (process.platform === 'win32') {
+      const pids = [process.pid, ...wins.map(w => w.webContents.getOSProcessId()).filter(Boolean)]
+      const typeDef = 'using System;using System.Runtime.InteropServices;public class M{[DllImport("psapi.dll")]public static extern bool EmptyWorkingSet(IntPtr h);[DllImport("kernel32.dll")]public static extern IntPtr OpenProcess(uint d,bool i,int p);[DllImport("kernel32.dll")]public static extern bool CloseHandle(IntPtr h);}'
+      const loop = `foreach($p in @(${pids.join(',')})){$h=[M]::OpenProcess(1024,$false,$p);if($h -ne [IntPtr]::Zero){[M]::EmptyWorkingSet($h);[M]::CloseHandle($h)}}`
+      exec(`powershell -NoProfile -NonInteractive -Command "Add-Type -TypeDefinition '${typeDef}'; ${loop}"`, { windowsHide: true }, () => {})
+    }
+
+    if (!silent) {
+      new Notification({ title: 'ИТД', body: 'Память полностью очищена', icon: path.join(__dirname, 'icon.png') }).show()
+    }
+  } catch (e) {
+    if (!silent) {
+      new Notification({ title: 'ИТД', body: 'Ошибка очистки', icon: path.join(__dirname, 'icon.png') }).show()
+    }
+  }
+}
+
+setInterval(() => clearMemory(true), 1000 * 60 * 30)
+
+function buildTrayMenu(win) {
+  return Menu.buildFromTemplate([
     { label: 'ИТД', icon: nativeImage.createFromPath(path.join(__dirname, 'icon.png')).resize({ width: 16, height: 16 }), enabled: false },
     { label: 'Гитхаб', click: () => shell.openExternal('https://github.com/YaOblako/ITD/tree/main') },
     { type: 'separator' },
     { label: 'Открыть', click: () => { win.show(); win.focus() } },
     { label: 'Перезагрузить', click: () => win.webContents.reload() },
-    { label: 'Проверить обновления', click: () => {
-      if (!app.isPackaged) {
-        new Notification({ title: 'ИТД', body: 'Проверка обновлений недоступна в режиме разработки' }).show()
-        return
+    { type: 'separator' },
+    {
+      label: settings.autoUpdateEnabled ? 'Авто-обновления: Вкл' : 'Авто-обновления: Выкл',
+      click: () => {
+        settings.autoUpdateEnabled = !settings.autoUpdateEnabled
+        saveSettings(settings)
+        tray.setContextMenu(buildTrayMenu(win))
       }
-      autoUpdater.checkForUpdates().then(result => {
-        if (!result || !result.updateInfo) return
-        const current = app.getVersion()
-        const latest = result.updateInfo.version
-        if (current === latest) {
-          new Notification({ title: 'ИТД', body: 'У вас уже последняя версия' }).show()
-        }
-      }).catch(() => {
-        new Notification({ title: 'ИТД', body: 'Не удалось проверить обновления. Проверьте доступ к интернету' }).show()
-      })
-    }},
+    },
+    {
+      label: 'Проверить обновления',
+      click: () => {
+        if (!app.isPackaged) return
+        autoUpdater.checkForUpdates()
+      }
+    },
     { type: 'separator' },
     { label: 'Выйти', click: () => { app.isQuiting = true; app.quit() } }
-  ]))
+  ])
+}
 
+function createTray(win) {
+  tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'icon.png')).resize({ width: 16, height: 16 }))
+  tray.setToolTip('ИТД')
+  tray.setContextMenu(buildTrayMenu(win))
   tray.on('double-click', () => { win.show(); win.focus() })
 }
 
 function setupUpdater() {
-  if (!app.isPackaged) return
-
+  if (!app.isPackaged || !settings.autoUpdateEnabled) return
   autoUpdater.checkForUpdatesAndNotify().catch(() => {})
-
   autoUpdater.on('update-available', (info) => {
-    new Notification({
-      title: 'ИТД',
-      body: `Доступно обновление, версия ${info.version} скачивается`,
-      icon: path.join(__dirname, 'icon.png')
-    }).show()
+    new Notification({ title: 'ИТД', body: `Доступна версия ${info.version}, скачивание...`, icon: path.join(__dirname, 'icon.png') }).show()
   })
-
   autoUpdater.on('update-downloaded', (info) => {
-    const notif = new Notification({
-      title: 'ИТД',
-      body: `Версия ${info.version} готова, нажмите для установки`,
-      icon: path.join(__dirname, 'icon.png')
-    })
-    notif.on('click', () => {
-      autoUpdater.quitAndInstall()
-    })
-    notif.show()
+    const n = new Notification({ title: 'ИТД', body: `Версия ${info.version} готова. Установить?`, icon: path.join(__dirname, 'icon.png') })
+    n.on('click', () => autoUpdater.quitAndInstall())
+    n.show()
   })
 }
 
 function setupIpc() {
-  ipcMain.removeAllListeners('win-minimize')
-  ipcMain.removeAllListeners('win-maximize')
-  ipcMain.removeAllListeners('win-close')
-  ipcMain.removeAllListeners('win-reload')
-  ipcMain.removeAllListeners('win-back')
-  ipcMain.removeAllListeners('win-forward')
-  ipcMain.removeAllListeners('win-devtools')
-
-  ipcMain.on('win-minimize', (e) => BrowserWindow.fromWebContents(e.sender)?.minimize())
-  ipcMain.on('win-maximize', (e) => {
-    const w = BrowserWindow.fromWebContents(e.sender)
-    w?.isMaximized() ? w.unmaximize() : w.maximize()
-  })
-  ipcMain.on('win-close', (e) => {
-    const w = BrowserWindow.fromWebContents(e.sender)
-    if (!w) return
-    const allWindows = BrowserWindow.getAllWindows()
-    if (allWindows.length > 1 && allWindows[0].id !== w.id) {
-      w.close()
-    } else {
-      w.hide()
+  const events = {
+    'win-minimize': (e) => BrowserWindow.fromWebContents(e.sender)?.minimize(),
+    'win-maximize': (e) => {
+      const w = BrowserWindow.fromWebContents(e.sender)
+      w?.isMaximized() ? w.unmaximize() : w.maximize()
+    },
+    'win-close': (e) => {
+      const w = BrowserWindow.fromWebContents(e.sender)
+      if (!w) return
+      BrowserWindow.getAllWindows().length > 1 ? w.close() : w.hide()
+    },
+    'win-reload': (e) => BrowserWindow.fromWebContents(e.sender)?.webContents.reload(),
+    'win-back': (e) => BrowserWindow.fromWebContents(e.sender)?.webContents.goBack(),
+    'win-forward': (e) => BrowserWindow.fromWebContents(e.sender)?.webContents.goForward(),
+    'win-devtools': (e) => BrowserWindow.fromWebContents(e.sender)?.webContents.toggleDevTools(),
+    'site-notification': (_, { title, body, icon }) => {
+      new Notification({ title, body, icon: icon || path.join(__dirname, 'icon.png') }).show()
     }
+  }
+  Object.entries(events).forEach(([name, fn]) => {
+    ipcMain.removeAllListeners(name)
+    ipcMain.on(name, fn)
   })
-  ipcMain.on('win-reload', (e) => BrowserWindow.fromWebContents(e.sender)?.webContents.reload())
-  ipcMain.on('win-back', (e) => BrowserWindow.fromWebContents(e.sender)?.webContents.goBack())
-  ipcMain.on('win-forward', (e) => BrowserWindow.fromWebContents(e.sender)?.webContents.goForward())
-  ipcMain.on('win-devtools', (e) => BrowserWindow.fromWebContents(e.sender)?.webContents.toggleDevTools())
 }
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    frame: false,
-    title: 'ИТД',
-    icon: path.join(__dirname, 'icon.png'),
-    backgroundColor: '#0f0f0f',
-    show: false,
+    width: 1200, height: 800, frame: false,
+    title: 'ИТД', icon: path.join(__dirname, 'icon.png'),
+    backgroundColor: '#0f0f0f', show: false,
     webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: false,
-      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false, contextIsolation: true,
+      sandbox: false, preload: path.join(__dirname, 'preload.js'),
+      backgroundThrottling: true,
+      devTools: true
     }
   })
 
   win.once('ready-to-show', () => win.show())
-
   win.on('close', (e) => {
     if (!app.isQuiting) {
       e.preventDefault()
       win.hide()
+      clearMemory(true)
     }
   })
 
@@ -224,10 +262,6 @@ function createWindow() {
 
   session.defaultSession.registerPreloadScript({ type: 'frame', filePath: path.join(__dirname, 'preload.js') })
 
-  ipcMain.on('site-notification', (_, { title, body, icon }) => {
-    new Notification({ title, body, icon: icon || path.join(__dirname, 'icon.png') }).show()
-  })
-
   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
     details.requestHeaders['User-Agent'] = UA
     details.requestHeaders['sec-ch-ua'] = '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"'
@@ -236,46 +270,33 @@ function createWindow() {
     callback({ requestHeaders: details.requestHeaders })
   })
 
-  win.webContents.on('did-finish-load', () => injectTitlebar(win))
-  win.webContents.on('did-navigate', () => injectTitlebar(win))
-  win.on('page-title-updated', (e) => e.preventDefault())
+  const handleWin = (w) => {
+    w.webContents.on('did-finish-load', () => injectTitlebar(w))
+    w.webContents.on('did-navigate', () => injectTitlebar(w))
+    w.on('page-title-updated', (e) => e.preventDefault())
+  }
+
+  handleWin(win)
 
   win.webContents.setWindowOpenHandler(() => ({
     action: 'allow',
     overrideBrowserWindowOptions: {
-      width: 1200,
-      height: 800,
-      minWidth: 400,
-      minHeight: 300,
-      frame: false,
-      backgroundColor: '#0f0f0f',
-      show: false,
-      icon: path.join(__dirname, 'icon.png'),
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        sandbox: false,
-        preload: path.join(__dirname, 'preload.js'),
-      }
+      width: 1200, height: 800, frame: false,
+      backgroundColor: '#0f0f0f', show: false,
+      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
     }
   }))
 
   win.loadURL('https://итд.com')
 }
 
-app.on('browser-window-created', (_, newWin) => {
-  newWin.once('ready-to-show', () => newWin.show())
-  newWin.webContents.on('did-finish-load', () => injectTitlebar(newWin))
-  newWin.webContents.on('did-navigate', () => injectTitlebar(newWin))
-  newWin.on('page-title-updated', (e) => e.preventDefault())
+app.on('browser-window-created', (_, w) => {
+  w.once('ready-to-show', () => w.show())
+  w.webContents.on('did-finish-load', () => injectTitlebar(w))
+  w.webContents.on('did-navigate', () => injectTitlebar(w))
+  w.on('page-title-updated', (e) => e.preventDefault())
 })
 
 app.whenReady().then(createWindow)
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow()
-})
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
+app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
