@@ -10,8 +10,6 @@ app.commandLine.appendSwitch('js-flags', '--expose-gc')
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService')
 app.commandLine.appendSwitch('disable-breakpad')
-app.commandLine.appendSwitch('disable-extensions')
-app.commandLine.appendSwitch('disable-software-rasterizer')
 
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
@@ -135,26 +133,15 @@ async function clearMemory(silent = false) {
 
     await session.defaultSession.clearCache()
     await session.defaultSession.clearHostResolverCache()
-    await session.defaultSession.closeAllConnections()
-    
-    await session.defaultSession.clearStorageData({
-      storages: ['appcache', 'shadercache', 'serviceworkers', 'cachestorage']
-    })
 
     if (process.platform === 'win32') {
       const pids = [process.pid, ...wins.map(w => w.webContents.getOSProcessId()).filter(Boolean)]
-      const typeDef = 'using System;using System.Runtime.InteropServices;public class M{[DllImport("psapi.dll")]public static extern bool EmptyWorkingSet(IntPtr h);[DllImport("kernel32.dll")]public static extern IntPtr OpenProcess(uint d,bool i,int p);[DllImport("kernel32.dll")]public static extern bool CloseHandle(IntPtr h);}'
+      const typeDef = 'using System;using System.Runtime.InteropServices;public class M{[DllImport(\\"psapi.dll\\")]public static extern bool EmptyWorkingSet(IntPtr h);[DllImport(\\"kernel32.dll\\")]public static extern IntPtr OpenProcess(uint d,bool i,int p);[DllImport(\\"kernel32.dll\\")]public static extern bool CloseHandle(IntPtr h);}'
       const loop = `foreach($p in @(${pids.join(',')})){$h=[M]::OpenProcess(1024,$false,$p);if($h -ne [IntPtr]::Zero){[M]::EmptyWorkingSet($h);[M]::CloseHandle($h)}}`
       exec(`powershell -NoProfile -NonInteractive -Command "Add-Type -TypeDefinition '${typeDef}'; ${loop}"`, { windowsHide: true }, () => {})
-    }
-
-    if (!silent) {
-      new Notification({ title: 'ИТД', body: 'Память полностью очищена', icon: path.join(__dirname, 'icon.png') }).show()
-    }
+    } 
   } catch (e) {
-    if (!silent) {
-      new Notification({ title: 'ИТД', body: 'Ошибка очистки', icon: path.join(__dirname, 'icon.png') }).show()
-    }
+    if (!silent) console.error(e)
   }
 }
 
@@ -163,13 +150,13 @@ setInterval(() => clearMemory(true), 1000 * 60 * 30)
 function buildTrayMenu(win) {
   return Menu.buildFromTemplate([
     { label: 'ИТД', icon: nativeImage.createFromPath(path.join(__dirname, 'icon.png')).resize({ width: 16, height: 16 }), enabled: false },
-    { label: 'Гитхаб', click: () => shell.openExternal('https://github.com/YaOblako/ITD/tree/main') },
+    { label: 'Гитхаб', click: () => shell.openExternal('https://github.com/YaOblako/ITD/') },
     { type: 'separator' },
     { label: 'Открыть', click: () => { win.show(); win.focus() } },
     { label: 'Перезагрузить', click: () => win.webContents.reload() },
     { type: 'separator' },
     {
-      label: settings.autoUpdateEnabled ? 'Авто-обновления: Вкл' : 'Авто-обновления: Выкл',
+      label: settings.autoUpdateEnabled ? 'Автообновления: Вкл' : 'Автообновления: Выкл',
       click: () => {
         settings.autoUpdateEnabled = !settings.autoUpdateEnabled
         saveSettings(settings)
@@ -179,7 +166,10 @@ function buildTrayMenu(win) {
     {
       label: 'Проверить обновления',
       click: () => {
-        if (!app.isPackaged) return
+        if (!app.isPackaged) {
+          new Notification({ title: 'ИТД', body: 'Проверка обновлений недоступна в дев режиме' }).show()
+          return
+        }
         autoUpdater.checkForUpdates()
       }
     },
@@ -196,13 +186,25 @@ function createTray(win) {
 }
 
 function setupUpdater() {
-  if (!app.isPackaged || !settings.autoUpdateEnabled) return
-  autoUpdater.checkForUpdatesAndNotify().catch(() => {})
+  if (!app.isPackaged) return
+  if (settings.autoUpdateEnabled) {
+    autoUpdater.checkForUpdatesAndNotify().catch(() => {})
+  }
+
   autoUpdater.on('update-available', (info) => {
-    new Notification({ title: 'ИТД', body: `Доступна версия ${info.version}, скачивание...`, icon: path.join(__dirname, 'icon.png') }).show()
+    new Notification({ title: 'ИТД', body: `Доступна версия ${info.version}, скачивание...`}).show()
   })
+
+  autoUpdater.on('update-not-available', (info) => {
+    new Notification({ title: 'ИТД', body: 'У вас уже последняя версия'}).show()
+  })
+
+  autoUpdater.on('error', (err) => {
+    new Notification({ title: 'ИТД', body: 'Ошибка проверки обновлений'}).show()
+  })
+
   autoUpdater.on('update-downloaded', (info) => {
-    const n = new Notification({ title: 'ИТД', body: `Версия ${info.version} готова. Установить?`, icon: path.join(__dirname, 'icon.png') })
+    const n = new Notification({ title: 'ИТД', body: `Версия ${info.version} готова. Установить?`})
     n.on('click', () => autoUpdater.quitAndInstall())
     n.show()
   })
@@ -243,7 +245,7 @@ function createWindow() {
       nodeIntegration: false, contextIsolation: true,
       sandbox: false, preload: path.join(__dirname, 'preload.js'),
       backgroundThrottling: true,
-      devTools: true
+      devTools: true // Мост юзелесс
     }
   })
 
@@ -281,9 +283,9 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(() => ({
     action: 'allow',
     overrideBrowserWindowOptions: {
-      width: 1200, height: 800, frame: false,
+      width: 800, height: 800, frame: false,
       backgroundColor: '#0f0f0f', show: false,
-      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
+      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true}
     }
   }))
 
