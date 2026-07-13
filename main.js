@@ -10,12 +10,19 @@ app.commandLine.appendSwitch('js-flags', '--expose-gc')
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService')
 app.commandLine.appendSwitch('disable-breakpad')
+<<<<<<< HEAD
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled')
+=======
+>>>>>>> d682c6a382f11cd0f5c0de3b6d926253fa2db50e
 
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
   app.quit()
+<<<<<<< HEAD
   process.exit(0)
+=======
+  return
+>>>>>>> d682c6a382f11cd0f5c0de3b6d926253fa2db50e
 }
 
 app.setName('ИТД')
@@ -41,12 +48,16 @@ function saveSettings(settings) {
 
 let settings = loadSettings()
 let tray = null
+<<<<<<< HEAD
 
 const chromeVersion = process.versions.chrome;
 const majorVersion = chromeVersion.split('.')[0];
 const cleanUA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
 
 app.userAgentFallback = cleanUA;
+=======
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+>>>>>>> d682c6a382f11cd0f5c0de3b6d926253fa2db50e
 
 Menu.setApplicationMenu(null)
 
@@ -201,11 +212,19 @@ function setupUpdater() {
     new Notification({ title: 'ИТД', body: `Доступна версия ${info.version}, скачивание...`}).show()
   })
 
+<<<<<<< HEAD
   autoUpdater.on('update-not-available', () => {
     new Notification({ title: 'ИТД', body: 'У вас уже последняя версия'}).show()
   })
 
   autoUpdater.on('error', () => {
+=======
+  autoUpdater.on('update-not-available', (info) => {
+    new Notification({ title: 'ИТД', body: 'У вас уже последняя версия'}).show()
+  })
+
+  autoUpdater.on('error', (err) => {
+>>>>>>> d682c6a382f11cd0f5c0de3b6d926253fa2db50e
     new Notification({ title: 'ИТД', body: 'Ошибка проверки обновлений'}).show()
   })
 
@@ -251,7 +270,11 @@ function createWindow() {
       nodeIntegration: false, contextIsolation: true,
       sandbox: false, preload: path.join(__dirname, 'preload.js'),
       backgroundThrottling: true,
+<<<<<<< HEAD
       devTools: true
+=======
+      devTools: true // Мост юзелесс
+>>>>>>> d682c6a382f11cd0f5c0de3b6d926253fa2db50e
     }
   })
 
@@ -268,6 +291,7 @@ function createWindow() {
   setupIpc()
   setupUpdater()
 
+<<<<<<< HEAD
   session.defaultSession.setPreloads([path.join(__dirname, 'preload.js')])
 
 	session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
@@ -280,6 +304,15 @@ function createWindow() {
         delete details.requestHeaders['sec-ch-ua-full-version-list'];
     }
 
+=======
+  session.defaultSession.registerPreloadScript({ type: 'frame', filePath: path.join(__dirname, 'preload.js') })
+
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    details.requestHeaders['User-Agent'] = UA
+    details.requestHeaders['sec-ch-ua'] = '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"'
+    details.requestHeaders['sec-ch-ua-mobile'] = '?0'
+    details.requestHeaders['sec-ch-ua-platform'] = '"Windows"'
+>>>>>>> d682c6a382f11cd0f5c0de3b6d926253fa2db50e
     callback({ requestHeaders: details.requestHeaders })
   })
 
@@ -296,7 +329,11 @@ function createWindow() {
     overrideBrowserWindowOptions: {
       width: 800, height: 800, frame: false,
       backgroundColor: '#0f0f0f', show: false,
+<<<<<<< HEAD
       webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
+=======
+      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true}
+>>>>>>> d682c6a382f11cd0f5c0de3b6d926253fa2db50e
     }
   }))
 
@@ -311,6 +348,7 @@ app.on('browser-window-created', (_, w) => {
 })
 
 app.whenReady().then(createWindow)
+<<<<<<< HEAD
 
 app.on('window-all-closed', () => { 
   if (process.platform !== 'darwin') app.quit() 
@@ -319,3 +357,7 @@ app.on('window-all-closed', () => {
 app.on('activate', () => { 
   if (BrowserWindow.getAllWindows().length === 0) createWindow() 
 })
+=======
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
+app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
+>>>>>>> d682c6a382f11cd0f5c0de3b6d926253fa2db50e

@@ -1,5 +1,6 @@
 node_modules/
 dist/
+<<<<<<< HEAD
 build/
 out/
 .electron/
@@ -8,3 +9,7 @@ yarn-debug.log*
 yarn-error.log*
 Thumbs.db
 .DS_Store
+=======
+.env
+*.log
+>>>>>>> d682c6a382f11cd0f5c0de3b6d926253fa2db50e
