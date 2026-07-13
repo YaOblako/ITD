@@ -1,0 +1,4 @@
+provider: github
+owner: YaOblako
+repo: ITD
+updaterCacheDirName: itd-updater
