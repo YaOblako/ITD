@@ -1,5 +1,5 @@
 # [ИТД](https://итд.com) На ПК
-**Я решил сделать ИТД на Windows 10/11 используя Electron. Проект полностью open-source. Если у вас не заходит включите ВПН, или отключите DNS т.к. это может мешать. Прошу, поставь star моему проекту!**
+**Я решил сделать ИТД на Windows 10/11 используя Electron. Проект полностью open-source. Если у вас не заходит, попробуйте с ВПН или поменять ДНС(иногда помогает). Прошу, поставь звезду моему проекту.**
 
 [![Latest Release](https://img.shields.io/github/v/release/YaOblako/ITD?style=for-the-badge&label=Последний%20Релиз)](https://github.com/YaOblako/ITD/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/YaOblako/ITD/total?style=for-the-badge&label=Скачивания)](https://github.com/YaOblako/ITD/releases)
@@ -10,8 +10,6 @@
 
 ---
 
-Почему нету новых обновлений?:
-Я думаю что проект полностью закончен и готов
 ## Клавиши:
 
 F5 - Обновить/Перезагрузить ИТД
